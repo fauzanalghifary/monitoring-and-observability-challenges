@@ -35,7 +35,7 @@ services:
   redis:
     image: bitnami/redis:7.0
     environment:
-      - ALLOW_EMPTY_PASSWORD=no
+      - ALLOW_EMPTY_PASSWORD=yes
       - REDIS_PASSWORD=${REDIS_PASSWORD}
     volumes:
       - redis_data:/bitnami

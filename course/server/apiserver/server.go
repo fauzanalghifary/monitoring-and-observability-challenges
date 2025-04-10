@@ -33,7 +33,10 @@ type ServerOpts struct {
 
 func NewServer(opts ServerOpts) Server {
 	log.Debug().
-		Str("postgres", fmt.Sprintf("%s:%s/%s", opts.Config.DB.Host, opts.Config.DB.Port, opts.Config.DB.Name)).
+		Str(
+			"postgres",
+			fmt.Sprintf("%s:%s/%s", opts.Config.DB.Host, opts.Config.DB.Port, opts.Config.DB.Name),
+		).
 		Str("redis", opts.Config.Redis.Addr()).
 		Msg("checking config")
 
@@ -83,7 +86,10 @@ func (s *Server) Run(ctx context.Context) error {
 
 	httpServer := s.newHTTPServer(ctx)
 	go func() {
-		log.Info().Msgf("Starting http server for serving gRPC-Gateway and OpenAPI Documentation on %s", s.opts.Config.HTTP.Addr())
+		log.Info().Msgf(
+			"Starting http server for serving gRPC-Gateway and OpenAPI Documentation on %s",
+			s.opts.Config.HTTP.Addr(),
+		)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal().Err(err).Msgf("listen:%+s\n", err)
 		}
@@ -150,8 +156,10 @@ func (s *Server) newHTTPServer(ctx context.Context) *http.Server {
 	api.Use() // TODO add required middleware for /api here
 	api.PathPrefix("/v1").Handler(gwmux)
 
-	sh := http.StripPrefix("/swagger/",
-		http.FileServer(http.Dir("./third_party/OpenAPI/")))
+	sh := http.StripPrefix(
+		"/swagger/",
+		http.FileServer(http.Dir("./third_party/OpenAPI/")),
+	)
 	mux.PathPrefix("/swagger/").Handler(sh)
 
 	gwServer := &http.Server{
@@ -164,7 +172,12 @@ func (s *Server) newHTTPServer(ctx context.Context) *http.Server {
 type registerFunc func(ctx context.Context, mux *runtime.ServeMux, conn *grpc.ClientConn) error
 
 // mustRegisterGWHandler is a convenience function to register a gateway handler.
-func mustRegisterGWHandler(ctx context.Context, register registerFunc, mux *runtime.ServeMux, conn *grpc.ClientConn) {
+func mustRegisterGWHandler(
+	ctx context.Context,
+	register registerFunc,
+	mux *runtime.ServeMux,
+	conn *grpc.ClientConn,
+) {
 	err := register(ctx, mux, conn)
 	if err != nil {
 		panic(err)
