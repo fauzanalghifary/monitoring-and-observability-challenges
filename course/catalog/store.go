@@ -2,6 +2,9 @@ package catalog
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
@@ -60,7 +63,14 @@ func (s *Store) FindAllCourse(ctx context.Context, opts ...ListOption) ([]Course
 
 	for rows.Next() {
 		var c Course
-		if err := rows.Scan(&c.ID, &c.Name, &c.Slug, &c.Description, &c.Status, &c.PublishedAt); err != nil {
+		if err := rows.Scan(
+			&c.ID,
+			&c.Name,
+			&c.Slug,
+			&c.Description,
+			&c.Status,
+			&c.PublishedAt,
+		); err != nil {
 			return nil, "", err
 		}
 
@@ -87,15 +97,30 @@ func (s *Store) FindCourseByID(ctx context.Context, id string) (*Course, error) 
 	if err := getConcert.QueryRowContext(ctx).Scan(
 		&c.ID, &c.Name, &c.Slug, &c.Description, &c.Status, &c.PublishedAt,
 	); err != nil {
-		// if errors.Is(err, sql.ErrNoRows) {
-		// 	return nil, db.ErrResourceNotFound{Message: fmt.Sprintf("course with id %s not found", id)}
-		// }
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, db.ErrResourceNotFound{
+				Message: fmt.Sprintf(
+					"course with id %s not found",
+					id,
+				),
+			}
+		}
 		return nil, err
 	}
 
 	var batches []Batch
 	selectBatches := sb.
-		Select("id", "name", "max_seats", "available_seats", "price", "currency", "start_date", "end_date", "version").
+		Select(
+			"id",
+			"name",
+			"max_seats",
+			"available_seats",
+			"price",
+			"currency",
+			"start_date",
+			"end_date",
+			"version",
+		).
 		From("course_batches").
 		Where(sq.Eq{"course_id": c.ID, "deleted_at": nil, "status": BatchStatusPublished}).
 		PlaceholderFormat(sq.Dollar)
@@ -106,7 +131,15 @@ func (s *Store) FindCourseByID(ctx context.Context, id string) (*Course, error) 
 	for rows.Next() {
 		var b Batch
 		if err := rows.Scan(
-			&b.ID, &b.Name, &b.MaxSeats, &b.AvailableSeats, &b.Price, &b.Currency, &b.StartDate, &b.EndDate, &b.Version,
+			&b.ID,
+			&b.Name,
+			&b.MaxSeats,
+			&b.AvailableSeats,
+			&b.Price,
+			&b.Currency,
+			&b.StartDate,
+			&b.EndDate,
+			&b.Version,
 		); err != nil {
 			return nil, err
 		}
@@ -125,16 +158,60 @@ func (c *Store) CreateCourse(ctx context.Context, course *Course) error {
 	sb := sq.StatementBuilder.RunWith(tx)
 	insertCourse := sb.
 		Insert("courses").
-		Columns("id", "name", "slug", "description", "status", "published_at", "created_at", "updated_at").
-		Values(course.ID, course.Name, course.Slug, course.Description, course.Status, course.PublishedAt, course.CreatedAt, course.UpdatedAt).
+		Columns(
+			"id",
+			"name",
+			"slug",
+			"description",
+			"status",
+			"published_at",
+			"created_at",
+			"updated_at",
+		).
+		Values(
+			course.ID,
+			course.Name,
+			course.Slug,
+			course.Description,
+			course.Status,
+			course.PublishedAt,
+			course.CreatedAt,
+			course.UpdatedAt,
+		).
 		PlaceholderFormat(sq.Dollar)
 
 	insertBatches := sb.
 		Insert("course_batches").
-		Columns("id", "name", "max_seats", "available_seats", "price", "currency", "start_date", "end_date", "course_id", "created_at", "updated_at", "status").
+		Columns(
+			"id",
+			"name",
+			"max_seats",
+			"available_seats",
+			"price",
+			"currency",
+			"start_date",
+			"end_date",
+			"course_id",
+			"created_at",
+			"updated_at",
+			"status",
+		).
 		PlaceholderFormat(sq.Dollar)
 	for _, b := range course.Batches {
-		insertBatches = insertBatches.Values(b.ID, b.Name, b.MaxSeats, b.AvailableSeats, b.Price, b.Currency, b.StartDate, b.EndDate, course.ID, b.CreatedAt, b.UpdatedAt, b.Status)
+		insertBatches = insertBatches.Values(
+			b.ID,
+			b.Name,
+			b.MaxSeats,
+			b.AvailableSeats,
+			b.Price,
+			b.Currency,
+			b.StartDate,
+			b.EndDate,
+			course.ID,
+			b.CreatedAt,
+			b.UpdatedAt,
+			b.Status,
+		)
 	}
 
 	_, err = insertCourse.ExecContext(ctx)
@@ -155,7 +232,10 @@ func (c *Store) CreateCourse(ctx context.Context, course *Course) error {
 	return err
 }
 
-func (c *Store) FindCourseBatchByID(ctx context.Context, id string, opts ...FindOption) (*Batch, error) {
+func (c *Store) FindCourseBatchByID(ctx context.Context, id string, opts ...FindOption) (
+	*Batch,
+	error,
+) {
 	options := &FindOptions{}
 	for _, o := range opts {
 		o(options)
@@ -170,20 +250,46 @@ func (c *Store) FindCourseBatchByID(ctx context.Context, id string, opts ...Find
 	}
 
 	selectBatch := sb.
-		Select("id", "name", "max_seats", "available_seats", "price", "currency", "start_date", "end_date", "version", "status").
+		Select(
+			"id",
+			"name",
+			"max_seats",
+			"available_seats",
+			"price",
+			"currency",
+			"start_date",
+			"end_date",
+			"version",
+			"status",
+		).
 		From("course_batches").
 		Where(sq.Eq{"id": id, "deleted_at": nil}).
 		PlaceholderFormat(sq.Dollar)
 
 	err := selectBatch.QueryRowContext(ctx).
-		Scan(&b.ID, &b.Name, &b.MaxSeats, &b.AvailableSeats, &b.Price, &b.Currency, &b.StartDate, &b.EndDate, &b.Version, &b.Status)
+		Scan(
+			&b.ID,
+			&b.Name,
+			&b.MaxSeats,
+			&b.AvailableSeats,
+			&b.Price,
+			&b.Currency,
+			&b.StartDate,
+			&b.EndDate,
+			&b.Version,
+			&b.Status,
+		)
 	if err != nil {
 		return nil, err
 	}
 	return &b, nil
 }
 
-func (c *Store) FindCourseBatchByIDAndCourseID(ctx context.Context, batchID, courseID string, opts ...FindOption) (*Batch, error) {
+func (c *Store) FindCourseBatchByIDAndCourseID(
+	ctx context.Context,
+	batchID, courseID string,
+	opts ...FindOption,
+) (*Batch, error) {
 	options := &FindOptions{}
 	for _, o := range opts {
 		o(options)
@@ -197,21 +303,47 @@ func (c *Store) FindCourseBatchByIDAndCourseID(ctx context.Context, batchID, cou
 	}
 
 	selectBatch := sb.
-		Select("cb.id", "cb.name", "cb.max_seats", "cb.available_seats", "cb.price", "cb.currency", "cb.start_date", "cb.end_date", "cb.version", "cb.status").
+		Select(
+			"cb.id",
+			"cb.name",
+			"cb.max_seats",
+			"cb.available_seats",
+			"cb.price",
+			"cb.currency",
+			"cb.start_date",
+			"cb.end_date",
+			"cb.version",
+			"cb.status",
+		).
 		From("course_batches cb").
 		Where(sq.Eq{"cb.id": batchID, "cb.course_id": courseID}).
 		PlaceholderFormat(sq.Dollar)
 
 	var b Batch
 	err := selectBatch.QueryRowContext(ctx).
-		Scan(&b.ID, &b.Name, &b.MaxSeats, &b.AvailableSeats, &b.Price, &b.Currency, &b.StartDate, &b.EndDate, &b.Version, &b.Status)
+		Scan(
+			&b.ID,
+			&b.Name,
+			&b.MaxSeats,
+			&b.AvailableSeats,
+			&b.Price,
+			&b.Currency,
+			&b.StartDate,
+			&b.EndDate,
+			&b.Version,
+			&b.Status,
+		)
 	if err != nil {
 		return nil, err
 	}
 	return &b, nil
 }
 
-func (c *Store) UpdateBatchAvailableSeats(ctx context.Context, b *Batch, opts ...UpdateOption) error {
+func (c *Store) UpdateBatchAvailableSeats(
+	ctx context.Context,
+	b *Batch,
+	opts ...UpdateOption,
+) error {
 	options := &UpdateOptions{}
 	for _, o := range opts {
 		o(options)
@@ -249,7 +381,11 @@ func (c *Store) UpdateBatchAvailableSeats(ctx context.Context, b *Batch, opts ..
 	return nil
 }
 
-func (c *Store) FindAllBatchesByCourseID(ctx context.Context, courseID string, opts ...ListOption) ([]Batch, string, error) {	
+func (c *Store) FindAllBatchesByCourseID(
+	ctx context.Context,
+	courseID string,
+	opts ...ListOption,
+) ([]Batch, string, error) {
 	options := &ListOptions{
 		Limit: 10,
 	}
@@ -261,7 +397,17 @@ func (c *Store) FindAllBatchesByCourseID(ctx context.Context, courseID string, o
 	var batches []Batch
 	sb := sq.StatementBuilder.RunWith(c.dbCache)
 	selectBatches := sb.
-		Select("id", "name", "max_seats", "available_seats", "price", "currency", "start_date", "end_date", "version").
+		Select(
+			"id",
+			"name",
+			"max_seats",
+			"available_seats",
+			"price",
+			"currency",
+			"start_date",
+			"end_date",
+			"version",
+		).
 		From("course_batches").
 		Where(sq.Eq{"course_id": courseID, "deleted_at": nil, "status": BatchStatusPublished}).
 		OrderBy("created_at DESC").
@@ -277,7 +423,15 @@ func (c *Store) FindAllBatchesByCourseID(ctx context.Context, courseID string, o
 	for rows.Next() {
 		var b Batch
 		if err := rows.Scan(
-			&b.ID, &b.Name, &b.MaxSeats, &b.AvailableSeats, &b.Price, &b.Currency, &b.StartDate, &b.EndDate, &b.Version,
+			&b.ID,
+			&b.Name,
+			&b.MaxSeats,
+			&b.AvailableSeats,
+			&b.Price,
+			&b.Currency,
+			&b.StartDate,
+			&b.EndDate,
+			&b.Version,
 		); err != nil {
 			return nil, "", err
 		}

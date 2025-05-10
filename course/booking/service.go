@@ -3,6 +3,7 @@ package booking
 import (
 	"context"
 	"errors"
+	"github.com/rs/zerolog/log"
 	"math/rand"
 	"time"
 
@@ -17,7 +18,8 @@ const (
 	maxReleaseAttemptRetry     = 5
 )
 
-func NewService(db *sqlx.DB,
+func NewService(
+	db *sqlx.DB,
 	bookingStore *Store,
 	catalogStore *catalog.Store,
 ) *Service {
@@ -35,7 +37,10 @@ type Service struct {
 }
 
 // CreateBooking creates a new booking for the given course and batch and emits BookingCreated event.
-func (s Service) CreateBooking(ctx context.Context, req *v1.CreateBookingRequest) (*Booking, error) {
+func (s Service) CreateBooking(ctx context.Context, req *v1.CreateBookingRequest) (
+	*Booking,
+	error,
+) {
 	course, err := s.catalogStore.FindCourseByID(ctx, req.Booking.GetCourse())
 	if err != nil {
 		return nil, err
@@ -65,7 +70,10 @@ func (s Service) CreateBooking(ctx context.Context, req *v1.CreateBookingRequest
 	return b, nil
 }
 
-func (s Service) ReserveBooking(ctx context.Context, req *v1.ReserveBookingRequest) (*Booking, error) {
+func (s Service) ReserveBooking(ctx context.Context, req *v1.ReserveBookingRequest) (
+	*Booking,
+	error,
+) {
 	tx, err := s.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -91,15 +99,29 @@ func (s Service) ReserveBooking(ctx context.Context, req *v1.ReserveBookingReque
 		tx.Rollback()
 		return nil, err
 	}
+
+	log.Info().
+		Float64("price", booking.Price).
+		Msgf("Booking %s reserved", booking.ID.String())
 	return booking, nil
 }
 
-func (s Service) reserveWithRetry(ctx context.Context, tx *sqlx.Tx, b *Booking, retryCount int) error {
+func (s Service) reserveWithRetry(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	b *Booking,
+	retryCount int,
+) error {
 	if retryCount > maxReservationAttemptRetry {
 		return ErrReservationMaxRetryExceeded
 	}
 
-	tc, err := s.catalogStore.FindCourseBatchByIDAndCourseID(ctx, b.Batch.ID.String(), b.Course.ID.String(), catalog.WithFindTx(tx))
+	tc, err := s.catalogStore.FindCourseBatchByIDAndCourseID(
+		ctx,
+		b.Batch.ID.String(),
+		b.Course.ID.String(),
+		catalog.WithFindTx(tx),
+	)
 	if err != nil {
 		return err
 	}
@@ -132,7 +154,12 @@ func (s Service) ExpireBooking(ctx context.Context, req *v1.ExpireBookingRequest
 		return err
 	}
 
-	b, err := s.bookingStore.FindBookingByID(ctx, req.GetBooking(), WithDisableCache(), WithFindTx(tx))
+	b, err := s.bookingStore.FindBookingByID(
+		ctx,
+		req.GetBooking(),
+		WithDisableCache(),
+		WithFindTx(tx),
+	)
 	if err != nil {
 		tx.Rollback()
 		return err
@@ -160,12 +187,22 @@ func (s Service) ExpireBooking(ctx context.Context, req *v1.ExpireBookingRequest
 	return nil
 }
 
-func (s Service) releaseBooking(ctx context.Context, tx *sqlx.Tx, b *Booking, retryCount int) error {
+func (s Service) releaseBooking(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	b *Booking,
+	retryCount int,
+) error {
 	if retryCount > maxReleaseAttemptRetry {
 		return ErrReleaseMaxRetryExceeded
 	}
 
-	batch, err := s.catalogStore.FindCourseBatchByIDAndCourseID(ctx, b.Batch.ID.String(), b.Course.ID.String(), catalog.WithFindTx(tx))
+	batch, err := s.catalogStore.FindCourseBatchByIDAndCourseID(
+		ctx,
+		b.Batch.ID.String(),
+		b.Course.ID.String(),
+		catalog.WithFindTx(tx),
+	)
 	if err != nil {
 		return err
 	}
@@ -185,6 +222,10 @@ func (s Service) releaseBooking(ctx context.Context, tx *sqlx.Tx, b *Booking, re
 	return nil
 }
 
-func (s Service) ListBookings(ctx context.Context, req *v1.ListBookingsRequest) ([]Booking, string, error) {
+func (s Service) ListBookings(ctx context.Context, req *v1.ListBookingsRequest) (
+	[]Booking,
+	string,
+	error,
+) {
 	return s.bookingStore.FindAllBookings(ctx, WithFindAllInvoiceNumber(req.GetInvoice()))
 }
