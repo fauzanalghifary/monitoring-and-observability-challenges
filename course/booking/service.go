@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
-	"math/rand"
+	"go.opentelemetry.io/otel/trace"
 	"time"
 
 	"github.com/imrenagicom/demo-app/course/catalog"
@@ -15,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
+var tracer = otel.Tracer("github.com/fauzanalghifary/demo-app/course/booking")
 var meter = otel.Meter("github.com/fauzanalghifary/demo-app/course/booking")
 
 const (
@@ -111,6 +113,8 @@ func (s Service) ReserveBooking(ctx context.Context, req *v1.ReserveBookingReque
 	*Booking,
 	error,
 ) {
+	ctx, span := tracer.Start(ctx, "ReserveBooking")
+	defer span.End()
 	tx, err := s.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -153,6 +157,12 @@ func (s Service) reserveWithRetry(
 	b *Booking,
 	retryCount int,
 ) error {
+	ctx, span := tracer.Start(
+		ctx, "reserveWithRetry", trace.WithAttributes(
+			attribute.Int("retryCount", retryCount),
+		),
+	)
+	defer span.End()
 	if retryCount > maxReservationAttemptRetry {
 		return ErrReservationMaxRetryExceeded
 	}
@@ -171,10 +181,6 @@ func (s Service) reserveWithRetry(
 		return err
 	}
 
-	if rand.Intn(5)+1 == 3 {
-		<-time.After(300 * time.Millisecond)
-	}
-
 	err = s.catalogStore.UpdateBatchAvailableSeats(ctx, tc, catalog.WithUpdateTx(tx))
 	if err != nil && !errors.Is(err, db.ErrNoRowUpdated) {
 		return err
@@ -190,6 +196,9 @@ func (s Service) GetBooking(ctx context.Context, req *v1.GetBookingRequest) (*Bo
 }
 
 func (s Service) ExpireBooking(ctx context.Context, req *v1.ExpireBookingRequest) error {
+	ctx, span := tracer.Start(ctx, "ExpireBooking")
+	defer span.End()
+
 	tx, err := s.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
@@ -237,6 +246,13 @@ func (s Service) releaseBooking(
 	b *Booking,
 	retryCount int,
 ) error {
+	ctx, span := tracer.Start(
+		ctx, "releaseBooking", trace.WithAttributes(
+			attribute.Int("retryCount", retryCount),
+		),
+	)
+	defer span.End()
+
 	if retryCount > maxReleaseAttemptRetry {
 		return ErrReleaseMaxRetryExceeded
 	}
