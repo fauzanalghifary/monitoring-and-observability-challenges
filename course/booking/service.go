@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel/metric"
 	"math/rand"
 	"time"
 
@@ -11,7 +12,10 @@ import (
 	"github.com/imrenagicom/demo-app/internal/db"
 	v1 "github.com/imrenagicom/demo-app/pkg/apiclient/course/v1"
 	"github.com/jmoiron/sqlx"
+	"go.opentelemetry.io/otel"
 )
+
+var meter = otel.Meter("github.com/fauzanalghifary/demo-app/course/booking")
 
 const (
 	maxReservationAttemptRetry = 5
@@ -23,10 +27,39 @@ func NewService(
 	bookingStore *Store,
 	catalogStore *catalog.Store,
 ) *Service {
+	bookingReservedCtr, err := meter.Int64Counter(
+		"booking.reserved",
+		metric.WithDescription("number of reserved bookings"),
+	)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to create metric")
+	}
+
+	bookingExpiredCtr, err := meter.Int64Counter(
+		"booking.expired",
+		metric.WithDescription("number of expired bookings"),
+	)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to create metric")
+	}
+
+	bookingReservedAmtCtr, err := meter.Float64Counter(
+		"booking.reserved.amount",
+		metric.WithDescription("total amount of reserved bookings"),
+		metric.WithUnit("IDR"),
+	)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to create metric")
+	}
+
 	return &Service{
 		db:           db,
 		bookingStore: bookingStore,
 		catalogStore: catalogStore,
+
+		bookingReservedCtr:    bookingReservedCtr,
+		bookingExpiredCtr:     bookingExpiredCtr,
+		bookingReservedAmtCtr: bookingReservedAmtCtr,
 	}
 }
 
@@ -34,6 +67,10 @@ type Service struct {
 	db           *sqlx.DB
 	bookingStore *Store
 	catalogStore *catalog.Store
+
+	bookingReservedCtr    metric.Int64Counter
+	bookingExpiredCtr     metric.Int64Counter
+	bookingReservedAmtCtr metric.Float64Counter
 }
 
 // CreateBooking creates a new booking for the given course and batch and emits BookingCreated event.
@@ -103,6 +140,10 @@ func (s Service) ReserveBooking(ctx context.Context, req *v1.ReserveBookingReque
 	log.Info().
 		Float64("price", booking.Price).
 		Msgf("Booking %s reserved", booking.ID.String())
+
+	s.bookingReservedCtr.Add(ctx, 1)
+	s.bookingReservedAmtCtr.Add(ctx, booking.Price)
+
 	return booking, nil
 }
 
@@ -184,6 +225,9 @@ func (s Service) ExpireBooking(ctx context.Context, req *v1.ExpireBookingRequest
 	if err = tx.Commit(); err != nil {
 		return err
 	}
+
+	s.bookingExpiredCtr.Add(ctx, 1)
+
 	return nil
 }
 
